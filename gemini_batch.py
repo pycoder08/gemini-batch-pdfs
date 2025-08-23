@@ -9,9 +9,12 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
+from google.genai import types
 from google.genai.types import UploadFileConfig
 
 from google import genai
+from google.api_core import exceptions
+
 
 ## CONSTANTS ##
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
@@ -27,7 +30,9 @@ PROMPT = (
 def main():
     gemini_client = genai.Client()
     batch_jsonl = build_jsonl_batch_folder(gemini_client, FOLDER_ID, PROMPT)
-
+    batch_id = run_gemini_batch(gemini_client, batch_jsonl, "gemini-1.5-flash")
+    monitor_batch_job(gemini_client, batch_id)
+    get_batch_output(gemini_client, batch_id)
 
 
 def get_drive_service():
@@ -62,18 +67,18 @@ def build_jsonl_batch_folder(gemini_client, folder_id, prompt):
     drive_service = get_drive_service()
     if not drive_service:
         print("Failed to connect to Google Drive.")
-        return
+        return None
 
     try:
         print("Finding PDFs in Google Drive Folder: {FOLDER_ID}...")
         query = f"'{folder_id}' in parents and mimeType='application/pdf'"
 
-        results = (drive_service.files().list(q=query, pageSize=10, fields="nextPageToken, files(id, name)").execute())
+        results = (drive_service.files().list(q=query, pageSize=1, fields="nextPageToken, files(id, name)").execute())
         drive_files = results.get("files", [])
 
         if not drive_files:
             print("No PDF files found.")
-            return
+            return None
         print(f"Found {len(drive_files)} PDF files.")
 
 
@@ -108,7 +113,7 @@ def build_jsonl_batch_folder(gemini_client, folder_id, prompt):
 
             except HttpError as error:
                 print(f"! Error uploading {file_info['name']}: {error}, skipped")
-                return
+                return None
 
 
 
@@ -130,7 +135,7 @@ def build_jsonl_batch_folder(gemini_client, folder_id, prompt):
             for request in jsonl_requests:
                 f.write(f"{json.dumps(request)}\n")
         print(f"Created {jsonl_filename}")
-        return jsonl_requests
+        return jsonl_filename
 
 
         '''
@@ -150,6 +155,58 @@ def build_jsonl_batch_folder(gemini_client, folder_id, prompt):
     except HttpError as error:
         print(f"An error occurred: {error}")
 
+
+def run_gemini_batch(gemini_client, jsonl_filename, gemini_model):
+    """Runs the gemini batch script"""
+    uploaded_file = gemini_client.files.upload(
+        file=jsonl_filename,
+        config=types.UploadFileConfig(display_name=jsonl_filename, mime_type="jsonl")
+    )
+
+    print(f"Uploaded {jsonl_filename} to Gemini.")
+
+    print("Running Gemini Batch Script...")
+
+
+    file_batch_job = gemini_client.batches.create(
+        model = gemini_model,
+        src=uploaded_file.name,
+        config={
+            'display_name': 'Gemini Batch Job'
+        },
+    )
+
+    print(f"Gemini Batch Job ID: {file_batch_job.id}")
+
+    return file_batch_job.id
+
+
+def get_batch_output(gemini_client, batch_job_id):
+    """Fetches the output of a completed Gemini batch job"""
+    batch_job = gemini_client.batches.get(name=batch_job_id)
+    for i, result in enumerate(batch_job.results):
+        print(f"\n--- Response {i+1} ---")
+
+        if result.response:
+            print(result.response.text)
+        else:
+            print("No response found.")
+
+def monitor_batch_job(gemini_client, batch_job_id):
+    """Monitors the status of a Gemini batch job"""
+
+    completed_states = {'JOB_STATE_SUCCEEDED', 'JOB_STATE_FAILED', 'JOB_STATE_CANCELLED', 'JOB_STATE_EXPIRED'}
+
+    print(f"Polling status for job: {batch_job_id}")
+    batch_job = gemini_client.batches.get(name=batch_job_id)  # Initial get
+    while batch_job.state.name not in completed_states:
+        print(f"Current state: {batch_job.state.name}")
+        time.sleep(30)  # Wait for 30 seconds before polling again
+        batch_job = gemini_client.batches.get(name=batch_job_id)
+
+    print(f"Job finished with state: {batch_job.state.name}")
+    if batch_job.state.name == 'JOB_STATE_FAILED':
+        print(f"Error: {batch_job.error}")
 
 if __name__ == "__main__":
     main()
