@@ -29,10 +29,9 @@ PROMPT = (
 
 def main():
     gemini_client = genai.Client()
-    batch_jsonl = build_jsonl_batch_folder(gemini_client, FOLDER_ID, PROMPT)
-    batch_id = run_gemini_batch(gemini_client, batch_jsonl, "gemini-1.5-flash")
-    monitor_batch_job(gemini_client, batch_id)
-    get_batch_output(gemini_client, batch_id)
+    drive_service = get_drive_service()
+    uploaded_pdfs = upload_drive_pdfs(gemini_client, drive_service, FOLDER_ID)
+    analyze_pdfs(gemini_client, uploaded_pdfs, "gemini-2.5-flash")
 
 
 def get_drive_service():
@@ -61,19 +60,17 @@ def get_drive_service():
         print(f"An error occurred: {error}")
         return None
 
-
-def build_jsonl_batch_folder(gemini_client, folder_id, prompt):
-    """Takes link to google drive folder and constructs a jsonl file to use in gemini batch script"""
-    drive_service = get_drive_service()
+def upload_drive_pdfs(gemini_client, drive_service, folder_id):
+    """Uploads all PDFs in a Google Drive folder to Gemini"""
     if not drive_service:
         print("Failed to connect to Google Drive.")
         return None
 
     try:
-        print("Finding PDFs in Google Drive Folder: {FOLDER_ID}...")
+        print(f"Finding PDFs in Google Drive Folder: {FOLDER_ID}...")
         query = f"'{folder_id}' in parents and mimeType='application/pdf'"
 
-        results = (drive_service.files().list(q=query, pageSize=1, fields="nextPageToken, files(id, name)").execute())
+        results = (drive_service.files().list(q=query, pageSize=10, fields="nextPageToken, files(id, name)").execute())
         drive_files = results.get("files", [])
 
         if not drive_files:
@@ -115,98 +112,43 @@ def build_jsonl_batch_folder(gemini_client, folder_id, prompt):
                 print(f"! Error uploading {file_info['name']}: {error}, skipped")
                 return None
 
-
-
-        jsonl_requests = []
-        for up in uploaded_pdfs:
-            request_data = {
-                "key": up["gemini_file"].name,
-                "request": {
-                    "contents": {
-                        "parts":
-                            [{"text": prompt}, {"file_data": {"file_uri": up["gemini_file"].uri}}]
-                    },
-                }
-            }
-            jsonl_requests.append(request_data)
-
-        jsonl_filename = "batch_requests.jsonl"
-        with open(jsonl_filename, "w") as f:
-            for request in jsonl_requests:
-                f.write(f"{json.dumps(request)}\n")
-        print(f"Created {jsonl_filename}")
-        return jsonl_filename
-
-
-        '''
-        result = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[gemini_file, prompt],
-        )
-
-        print("\n>>> Gemini Analysis Result:")
-        print(result.text)
-
-        # 5. CLEAN UP
-        gemini_client.files.delete(name=gemini_file.name)
-        print(f"\nCleaned up file {gemini_file.name} from Gemini.")'''
-
+        return uploaded_pdfs
 
     except HttpError as error:
         print(f"An error occurred: {error}")
+        return None
+
+def analyze_pdfs(gemini_client, uploaded_pdfs, gemini_model):
+    """Analyzes all PDFs uploaded to Gemini"""
+    all_responses = []
+    for up in uploaded_pdfs:
+        try:
+            print(f"Analyzing {up['drive_info']['name']}...")
+            result = gemini_client.models.generate_content(
+                model=gemini_model,
+                contents=[{"text": PROMPT}, {"file_data": {"file_uri": up["gemini_file"].uri}}],
+            )
+            print("  -Analysis Complete")
+
+            all_responses.append({"file_name": up['drive_info']['name'], "file_id": up['drive_info']['id'], "analysis": result.text})
+
+            ## CLEANUP
+            gemini_client.files.delete(name=up['gemini_file'].name)
+            print(f"  - Cleaned up file {up['gemini_file'].name} from Gemini.")
+
+            time.sleep(1) # Avoid rate limits
+
+        except exceptions.GoogleAPICallError as error:
+            print(f"! Error analyzing {up['drive_info']['name']}: {error}, skipped")
+            continue
+
+    # Save reponses to json
+
+    with open('responses.json', 'w') as f:
+        json.dump(all_responses, f, indent=4)
+        print("Saved responses to responses.json")
 
 
-def run_gemini_batch(gemini_client, jsonl_filename, gemini_model):
-    """Runs the gemini batch script"""
-    uploaded_file = gemini_client.files.upload(
-        file=jsonl_filename,
-        config=types.UploadFileConfig(display_name=jsonl_filename, mime_type="jsonl")
-    )
-
-    print(f"Uploaded {jsonl_filename} to Gemini.")
-
-    print("Running Gemini Batch Script...")
-
-
-    file_batch_job = gemini_client.batches.create(
-        model = gemini_model,
-        src=uploaded_file.name,
-        config={
-            'display_name': 'Gemini Batch Job'
-        },
-    )
-
-    print(f"Gemini Batch Job ID: {file_batch_job.id}")
-
-    return file_batch_job.id
-
-
-def get_batch_output(gemini_client, batch_job_id):
-    """Fetches the output of a completed Gemini batch job"""
-    batch_job = gemini_client.batches.get(name=batch_job_id)
-    for i, result in enumerate(batch_job.results):
-        print(f"\n--- Response {i+1} ---")
-
-        if result.response:
-            print(result.response.text)
-        else:
-            print("No response found.")
-
-def monitor_batch_job(gemini_client, batch_job_id):
-    """Monitors the status of a Gemini batch job"""
-
-    completed_states = {'JOB_STATE_SUCCEEDED', 'JOB_STATE_FAILED', 'JOB_STATE_CANCELLED', 'JOB_STATE_EXPIRED'}
-
-    print(f"Polling status for job: {batch_job_id}")
-    batch_job = gemini_client.batches.get(name=batch_job_id)  # Initial get
-    while batch_job.state.name not in completed_states:
-        print(f"Current state: {batch_job.state.name}")
-        time.sleep(30)  # Wait for 30 seconds before polling again
-        batch_job = gemini_client.batches.get(name=batch_job_id)
-
-    print(f"Job finished with state: {batch_job.state.name}")
-    if batch_job.state.name == 'JOB_STATE_FAILED':
-        print(f"Error: {batch_job.error}")
 
 if __name__ == "__main__":
     main()
