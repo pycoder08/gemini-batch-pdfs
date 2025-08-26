@@ -18,6 +18,7 @@ from google.api_core import exceptions
 ## CONSTANTS ##
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 FOLDER_ID = "1wBE7XbfBTjFP-60jIB1MIYcBfjL4O5Ux"
+GEMINI_MODEL = "gemini-2.5-flash"
 PROMPT =  """You are a transcription assistant specializing in educational documents. Your task is to transcribe the provided PDF, preserving the distinction between printed text (headers, questions) and handwritten text (student responses).
 
         The output must be in Markdown format.
@@ -53,7 +54,7 @@ def main():
     gemini_client = genai.Client()
     drive_service = get_drive_service()
     uploaded_pdfs = upload_drive_pdfs(gemini_client, drive_service, FOLDER_ID)
-    analyze_pdfs(gemini_client, uploaded_pdfs, "gemini-2.5-flash")
+    analyze_pdfs(gemini_client, uploaded_pdfs, GEMINI_MODEL)
 
 
 def get_drive_service():
