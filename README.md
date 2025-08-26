@@ -24,4 +24,4 @@ The first time you run the script, you'll be taken to your browser and asked to 
 
 ## Usage
 
-In the script, edit the FOLDER_ID constant to be the ID of the folder you want to analyze (the string of numbers and letters at the end of a google drive link). Edit the prompt to be what you want, and then run through the terminal. Note that the script is set to only work on PDFs. The script is currently set to use gemini 2.5 pro, but this can be changed as well.
+In the script, edit the FOLDER_ID constant to be the ID of the folder you want to analyze (the string of numbers and letters at the end of a google drive link). Edit the prompt to be what you want, and then run through the terminal. Note that the script is set to only work on PDFs. The script is currently set to use gemini 2.5 pro, but this can be changed as well with the `GEMINI_MODEL` constant.
