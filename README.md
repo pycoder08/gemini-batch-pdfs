@@ -20,7 +20,7 @@ Next, you will need a Google Gemini API key, which you can obtain for free [here
 
 Once you have your key, save it as an envoirnment variable named 'GEMINI_API_KEY' exactly by creating a .env file and adding the following command:
 
-`$env:GEMINI_API_KEY:"your key here"`
+`GEMINI_API_KEY:"your key here"`
 
 
 Select Your Google Cloud Project: Go to the [Google Cloud Console](console.cloud.google.com) and select the project you used for your API key.
