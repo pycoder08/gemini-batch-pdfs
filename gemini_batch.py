@@ -3,6 +3,7 @@ import json
 import os.path
 import io
 
+from dotenv import load_dotenv
 import markdown
 from fpdf import FPDF
 from google.auth.transport.requests import Request
@@ -19,7 +20,7 @@ from google.api_core import exceptions
 
 
 ## CONSTANTS ##
-SCOPES = ["https://www.googleapis.com/auth/drive"]
+SCOPES = ["https://www.googleapis.com/auth/drive"] # Controls access to Google Drive so it can read/write files
 FOLDER_ID = "YOUR_DRIVE_FOLDER_ID_HERE"
 GEMINI_MODEL = "gemini-2.5-flash"
 PROMPT =  """YOUR PROMPT HERE"""
@@ -27,7 +28,9 @@ CONVERT_TO_PDF = True
 OUTPUT_FOLDER = "YOUR_OUTPUT_FOLDER_HERE"
 
 
+
 def main():
+    load_dotenv()
     gemini_client = genai.Client()
     drive_service = get_drive_service()
     uploaded_pdfs = upload_drive_pdfs(gemini_client, drive_service, FOLDER_ID)
