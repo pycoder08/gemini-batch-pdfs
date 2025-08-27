@@ -2,6 +2,9 @@ import time
 import json
 import os.path
 import io
+
+import markdown
+from fpdf import FPDF
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -20,6 +23,8 @@ SCOPES = ["https://www.googleapis.com/auth/drive"]
 FOLDER_ID = "YOUR_DRIVE_FOLDER_ID_HERE"
 GEMINI_MODEL = "gemini-2.5-flash"
 PROMPT =  """YOUR PROMPT HERE"""
+CONVERT_TO_PDF = True
+OUTPUT_FOLDER = "YOUR_OUTPUT_FOLDER_HERE"
 
 
 def main():
@@ -27,7 +32,6 @@ def main():
     drive_service = get_drive_service()
     uploaded_pdfs = upload_drive_pdfs(gemini_client, drive_service, FOLDER_ID)
     analyze_pdfs(gemini_client, uploaded_pdfs, GEMINI_MODEL)
-
 
 def get_drive_service():
     """Initializes and returns an authenticated Google Drive service object."""
@@ -65,7 +69,7 @@ def upload_drive_pdfs(gemini_client, drive_service, folder_id):
         print(f"Finding PDFs in Google Drive Folder: {FOLDER_ID}...")
         query = f"'{folder_id}' in parents and mimeType='application/pdf'"
 
-        results = (drive_service.files().list(q=query, pageSize=100, fields="nextPageToken, files(id, name)").execute())
+        results = (drive_service.files().list(q=query, pageSize=250, fields="nextPageToken, files(id, name)").execute())
         drive_files = results.get("files", [])
 
         if not drive_files:
@@ -101,7 +105,7 @@ def upload_drive_pdfs(gemini_client, drive_service, folder_id):
                     )
                 )
                 uploaded_pdfs.append({"drive_info": file_info, "gemini_file": gemini_file})
-                time.sleep(1) # Pause to avoid rate limits
+                time.sleep(2) # Pause to avoid rate limits
 
             except HttpError as error:
                 print(f"! Error uploading {file_info['name']}: {error}, skipped")
@@ -131,18 +135,29 @@ def analyze_pdfs(gemini_client, uploaded_pdfs, gemini_model):
             gemini_client.files.delete(name=up['gemini_file'].name)
             print(f"  - Cleaned up file {up['gemini_file'].name} from Gemini.")
 
-            time.sleep(1) # Avoid rate limits
+            time.sleep(2) # Avoid rate limits
 
         except exceptions.GoogleAPICallError as error:
             print(f"! Error analyzing {up['drive_info']['name']}: {error}, skipped")
             continue
+
+        except exceptions.ResourceExhausted as error:
+            print(f"! Resource error analyzing {up['drive_info']['name']}: {error}, skipped")
+            time.sleep(5)
+            continue
+
+        except Exception as error:
+            print(f"! Error analyzing {up['drive_info']['name']}: {error}, skipped")
+            continue
+
+
 
     # Save reponses to json
 
     with open('responses.json', 'w') as f:
         json.dump(all_responses, f, indent=4)
         print("Saved responses to responses.json")
-
+    return all_responses
 
 def gather_drive_links(drive_service, link_list):
     folder_id = create_folder(drive_service, "Copied Files from Links")
@@ -173,6 +188,43 @@ def create_folder(drive_service, folder_name):
     }
     folder = drive_service.files().create(body=folder_metadata, fields="id").execute()
     return folder.get("id")
+
+def clean_filename(filename):
+    """Removes characters that are invalid in Windows/Mac/Linux filenames."""
+    # Remove the extension and invalid characters
+    name_without_ext = os.path.splitext(filename)[0]
+    sanitized_name = re.sub(r'[\\/*?:"<>|]', "", name_without_ext)
+    return f"{sanitized_name}.pdf"
+
+
+def analyses_to_pdf(responses):
+    """Converts a list of analysis responses to a PDF file."""
+    print("Converting responses to PDF...")
+
+    for i, analysis_data in enumerate(responses):
+        original_filename = analysis_data["file_name"]
+        analysis_text = analysis_data.get('analysis', 'No analysis available.')
+
+        pdf_filename = clean_filename(original_filename)
+        pdf_filepath = OUTPUT_FOLDER + "/" + pdf_filename
+
+        try:
+            pdf = FPDF()
+            pdf.add_page()
+
+            pdf.set_font('helvetica', '', 12)
+            cleaned_text = analysis_text.encode('latin-1', 'replace').decode('latin-1')
+
+            markdown_content = f"#{original_filename.strip(".pdf")}\n\n{cleaned_text}"
+
+            html_content = markdown.markdown(markdown_content)
+
+            pdf.write_html(html_content)
+
+            pdf.output(pdf_filepath)
+
+        except Exception as e:
+            print(f"    - FAILED to create PDF for '{original_filename}'. Reason: {e}")
 
 
 if __name__ == "__main__":
