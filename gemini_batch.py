@@ -17,37 +17,9 @@ from google.api_core import exceptions
 
 ## CONSTANTS ##
 SCOPES = ["https://www.googleapis.com/auth/drive"]
-FOLDER_ID = "1wBE7XbfBTjFP-60jIB1MIYcBfjL4O5Ux"
+FOLDER_ID = "YOUR_DRIVE_FOLDER_ID_HERE"
 GEMINI_MODEL = "gemini-2.5-flash"
-PROMPT =  """You are a transcription assistant specializing in educational documents. Your task is to transcribe the provided PDF, preserving the distinction between printed text (headers, questions) and handwritten text (student responses).
-
-        The output must be in Markdown format.
-    
-        Follow these rules precisely:
-    
-        Transcribe the document page by page, starting each page with 2 blank lines, then --- PAGE X ---, then another blank line.
-    
-        Identify all printed text, such as section titles (e.g., "SECTION 1"), questions, and field labels (e.g., "Name:", "ID Number:"). Format all of this printed text as bold Markdown text.
-    
-        Identify the student's handwritten responses.
-    
-        Present the transcribed text for each section with the bolded headers first, followed by a blank line, and then the student's response in plain text.
-    
-        When you encounter a checkmark, just ignore it
-    
-        Do not omit any text from the original document, including page numbers or marginal notes like "Mail back to Tayba."
-    
-        Correct obvious English spelling errors in the student's response based on context (e.g., "Kusowing" to "Knowing", "ferents" to "parents").
-    
-        Do NOT correct the spelling of transliterated Arabic words like 'birr', 'Deen', 'Allah', 'Insha Allah', 'Ameen', 'hadith', 'Qur'an', etc. 
-        
-        Make sure to properly identify when a word is actually arabic and correct it accordingly.
-        
-        Do NOT use any special characters. Only alphanumeric characters and spaces with markdown formatting. If something isn't normal text just ignore it.
-        
-        Make sure to separate things properly and don't put things on the same line when they should be on different lines.
-    
-        Do not add any commentary, greetings, or explanations. Provide only the transcribed Markdown text from the document."""
+PROMPT =  """YOUR PROMPT HERE"""
 
 
 def main():
